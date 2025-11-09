@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "crxon-faq-llm"
+version = "1.0.0"
+description = "A FastAPI backend of customized knowledge base, RAG-based FAQ"
+authors = ["Iris Amamiya"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+fastapi = "^0.121.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
