@@ -10,6 +10,13 @@ packages = [{include = "src"}]
 [tool.poetry.dependencies]
 python = ">=3.11"
 fastapi = "^0.121.1"
+pydantic-settings = "^2.11.0"
+pytest = "^9.0.0"
+pathlib = "^1.0.1"
+numpy = "^2.3.4"
+logging = "^0.4.9.6"
+scikit-learn = "^1.7.2"
+sentence-transformers = "^5.1.2"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
