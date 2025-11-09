@@ -10,11 +10,13 @@ Key Features:
 
 import re
 import numpy as np
+import logging
+from abc import ABC, abstractmethod
+
 from typing import Optional
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
-import logging
-from abc import ABC, abstractmethod
+from sklearn.metrics.pairwise import cosine_similarity
 
 from src.config.settings import settings
 
@@ -66,6 +68,12 @@ class KnowledgeBaseService(ABC):
         """Get stats for the knowledge base"""
         pass
 
+    @abstractmethod
+    def search(self, query: str) -> list[dict]:
+        """Semantic search using embeddings"""
+        # Returns relevant KB chunks
+        pass
+
 
 class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
     """
@@ -99,14 +107,24 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
 
         logger.info(f"Knowledge base loaded: {len(self.chunks)} chunks")
 
+    def get_all_sources(self) -> list[str]:
+        """Get list of all source files in KB"""
+        return list(set(chunk.source_file for chunk in self.chunks))
+
+    def get_chunk_by_index(self, index: int) -> Optional[MarkdownChunk]:
+        """Retrieve a specific chunk by index"""
+        if 0 <= index < len(self.chunks):
+            return self.chunks[index]
+        return None
+
     def get_stats(self) -> dict:
         """Get knowledge base statistics"""
         return {
             "total_chunks": len(self.chunks),
-            # "total_sources": len(self.get_all_sources()),
+            "total_sources": len(self.get_all_sources()),
             "embedding_dimensions": self.embeddings.shape[1] if self.embeddings is not None else 0,
-            # "model_name": self.model.get_sentence_embedding_dimension(),
-            # "sources": self.get_all_sources()
+            "sources": self.get_all_sources(),
+            "model_details": self.model,
         }
 
     def _load_knowledge_base(self) -> None:
@@ -314,3 +332,51 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
             chunk.embedding = embedding
 
         logger.info(f"Embeddings created: shape {self.embeddings.shape}")
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 3,
+        similarity_threshold: float = 0.3
+    ) -> list[dict]:
+        """
+        Semantic search for relevant chunks.
+
+        Args:
+            query: User's question
+            top_k: Number of top results to return
+            similarity_threshold: Minimum similarity score (0-1)
+
+        Returns:
+            List of chunk dictionaries with similarity scores
+        """
+        if not self.chunks or self.embeddings is None:
+            logger.error("Knowledge base not initialized")
+            return []
+
+        # Generate query embedding
+        query_embedding = self.model.encode([query], convert_to_numpy=True)
+
+        # Calculate cosine similarity
+        similarities = cosine_similarity(query_embedding, self.embeddings)[0]
+
+        # Get top-k indices
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+
+        # Filter by threshold and prepare results
+        results = []
+        for idx in top_indices:
+            similarity = float(similarities[idx])
+
+            if similarity < similarity_threshold:
+                continue
+
+            chunk = self.chunks[idx]
+            result = chunk.to_dict()
+            result['similarity_score'] = similarity
+            results.append(result)
+
+        logger.info(
+            f"Search query: '{query}' - Found {len(results)} relevant chunks")
+
+        return results
