@@ -1,4 +1,5 @@
 import logging
+import re
 from abc import ABC, abstractmethod
 from src.service.knowledge_base import KnowledgeBaseService
 from src.config.settings import settings
@@ -10,18 +11,23 @@ logger = logging.getLogger(__name__)
 
 class LLMService(ABC):
     @abstractmethod
-    def __init__(self, kb_service: KnowledgeBaseService):
+    def __init__(self, kb_service: KnowledgeBaseService, confidence_threshold: float):
         pass
 
     @abstractmethod
     async def generate_response(self, user_message: str, chat_history: list = []) -> dict:
         pass
 
+    @abstractmethod
+    def _evaluate_confidence(self, response: str, context: list[dict]) -> float:
+        pass
+
 
 class ClaudeLLMService(LLMService):
-    def __init__(self, kb_service: KnowledgeBaseService):
+    def __init__(self, kb_service: KnowledgeBaseService, confidence_threshold: float = 0.6):
         self.kb_service = kb_service
         self.agent = create_agent(model=settings.CLAUDE_MODEL)
+        self.confidence_threshold = confidence_threshold
 
     async def generate_response(
         self,
@@ -40,8 +46,14 @@ class ClaudeLLMService(LLMService):
         # Call Claude API and get response
         response = await self._call_claude(prompt, formatted_messages)
 
+        # Evaluate confidence
+        confidence = self._evaluate_confidence(response, context)
+
         return {
             "response": response,
+            "confidence": confidence,
+            "threshold": self.confidence_threshold,
+            "needs_attention": confidence < self.confidence_threshold
         }
 
     async def _call_claude(
@@ -76,7 +88,7 @@ class ClaudeLLMService(LLMService):
             YOUR TASK:
             1. Acknowledge that you don't have specific information about this topic in your knowledge base
             2. Be empathetic and professional
-            3. Let the user know that a support ticket will be created for them
+            3. Let the user know that additional attention is needed
             4. A human agent will follow up with them soon
 
             RESPONSE GUIDELINES:
@@ -86,7 +98,7 @@ class ClaudeLLMService(LLMService):
             - Do NOT make up information or provide general advice
 
             TEMPLATE RESPONSE (it's ok if the actual response varies slightly from the template; no need to strictly follow the template):
-            "I don't have specific information about that in my current knowledge base. I'll create a support ticket for you right away, and one of our team members will reach out to help you with this as soon as possible."
+            "I don't have specific information about that in my current knowledge base. I'll ask for additional support for you right away, and one of our team members will reach out to help you with this as soon as possible."
             """
 
         # Normal Case: KB context available - build structured prompt
@@ -125,7 +137,7 @@ class ClaudeLLMService(LLMService):
 
         HANDLING UNCERTAINTY:
         If the knowledge base sources don't adequately answer the user's question, respond with a template response (it's ok if the actual response varies slightly from the template; no need to strictly follow the template):
-        "I don't have complete information about that in my knowledge base. I'll create a support ticket so our team can provide you with accurate details and assistance."
+        "I don't have complete information about that in my knowledge base. I'll ask for additional support so our team can provide you with accurate details and assistance."
 
         RESPONSE STYLE:
         - Professional yet conversational
@@ -151,3 +163,114 @@ class ClaudeLLMService(LLMService):
         })
 
         return messages
+
+    def _evaluate_confidence(self, response: str, context: list[dict]) -> float:
+        confidence_score = 0.5  # Neutral starting point
+
+        # Factor 1: KB Retrieval Quality (±0.4)
+        if not context:
+            confidence_score -= 0.4  # No context = low confidence
+        else:
+            # Average similarity of retrieved chunks
+            avg_similarity = sum(r["similarity_score"]
+                                 for r in context) / len(context)
+            best_similarity = max(r["similarity_score"] for r in context)
+
+            # Scale: 0.3-0.9 similarity -> -0.2 to +0.4 confidence
+            kb_confidence = (avg_similarity - 0.5) * 0.6 + \
+                (best_similarity - 0.5) * 0.2
+            confidence_score += kb_confidence
+
+            logger.debug(
+                f"KB quality: avg_sim={avg_similarity:.2f}, best_sim={best_similarity:.2f}, contrib={kb_confidence:.2f}")
+
+        # Factor 2: Uncertainty Indicators (±0.3)
+        uncertainty_phrases = [
+            "i don't have",
+            "i don't know",
+            "not sure",
+            "unclear",
+            "can't find",
+            "no information",
+            "unable to",
+            "don't have complete information",
+            "don't have specific information",
+            "i'll ask for additional support",
+            "our team can provide",
+            "limited information",
+            "not certain"
+        ]
+
+        response_lower = response.lower()
+        uncertainty_count = sum(
+            1 for phrase in uncertainty_phrases if phrase in response_lower)
+
+        if uncertainty_count > 0:
+            uncertainty_penalty = min(0.3, uncertainty_count * 0.15)
+            confidence_score -= uncertainty_penalty
+            logger.debug(
+                f"Uncertainty detected: {uncertainty_count} phrases, penalty={uncertainty_penalty:.2f}")
+
+        # Factor 3: Response Completeness (±0.2)
+        response_length = len(response)
+
+        if response_length > 200:
+            # Detailed response suggests confidence
+            confidence_score += 0.15
+        elif response_length > 100:
+            confidence_score += 0.05
+        elif response_length < 50:
+            # Very short response might indicate uncertainty
+            confidence_score -= 0.1
+
+        # Check for actionable content (steps, instructions)
+        actionable_indicators = [
+            r'\d+\.',  # Numbered lists
+            '- ',      # Bullet points
+            'step',
+            'first',
+            'then',
+            'click',
+            'navigate',
+            'go to'
+        ]
+
+        has_actionable = any(re.search(indicator, response_lower)
+                             for indicator in actionable_indicators)
+        if has_actionable:
+            confidence_score += 0.05
+
+        logger.debug(
+            f"Response length: {response_length}, actionable: {has_actionable}")
+
+        # Factor 4: Context Utilization (±0.1)
+        if context:
+            # Extract significant words from KB content
+            kb_words = set()
+            for result in context:
+                # Words 5+ chars
+                words = re.findall(r'\b\w{5,}\b', result['content'].lower())
+                kb_words.update(words)
+
+            # Extract words from response
+            response_words = set(re.findall(r'\b\w{5,}\b', response_lower))
+
+            # Calculate overlap
+            overlap = len(kb_words & response_words)
+            overlap_ratio = overlap / len(kb_words) if kb_words else 0
+
+            if overlap > 8:
+                confidence_score += 0.1
+            elif overlap > 4:
+                confidence_score += 0.05
+
+            logger.debug(
+                f"Context utilization: {overlap} shared words, ratio={overlap_ratio:.2f}")
+
+        # Clamp to valid range
+        final_score = max(0.0, min(1.0, confidence_score))
+
+        logger.info(
+            f"Confidence evaluation: {final_score:.2f} (threshold: {self.confidence_threshold})")
+
+        return final_score

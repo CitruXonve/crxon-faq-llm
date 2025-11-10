@@ -21,6 +21,8 @@ async def sent_user_message(llm_service: ClaudeLLMService, user_message: str, st
     print(
         f"Time taken to generate response: {(end_time - start_time):.2f} seconds")
     print("LLM response length:", len(resp["response"]))
+    print("LLM confidence:", {key: value for key,
+          value in resp.items() if key != "response"})
     return end_time
 
 

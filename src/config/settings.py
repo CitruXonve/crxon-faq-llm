@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """Application settings."""
     project_root: Path = Path(__file__).parent.parent.parent
     KB_DIRECTORY: str = os.path.join(
-        project_root, '.pre_training_data')
+        project_root, '.knowledge_sources')
 
     """Claude API settings"""
     CLAUDE_MODEL: str
