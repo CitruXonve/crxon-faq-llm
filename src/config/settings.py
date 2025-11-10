@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     KB_DIRECTORY: str = os.path.join(
         project_root, '.pre_training_data')
 
+    """Claude API settings"""
+    CLAUDE_MODEL: str
+
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(Path(__file__).parent.parent.parent, '.env'),
+        env_file_encoding='utf-8',
+        extra='ignore'
+    )
+
 
 # Create a global settings instance
 # settings = (
