@@ -7,6 +7,7 @@ from src.config.settings import settings
 from langchain.agents import create_agent
 from langchain.messages import AnyMessage, AIMessage
 from langchain.agents.middleware import dynamic_prompt, ModelRequest
+from langchain_anthropic import ChatAnthropic
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,11 @@ class ClaudeLLMService(LLMService):
     def __init__(self, kb_service: KnowledgeBaseService, confidence_threshold: float = 0.6):
         self.kb_service = kb_service
         self.agent = create_agent(
-            model=settings.CLAUDE_MODEL,
+            model=ChatAnthropic(
+                model=settings.CLAUDE_MODEL,
+                temperature=0.7,  # Balanced - not too creative, not too rigid
+                max_tokens=settings.CLAUDE_MAX_TOKENS
+            ),
             middleware=[build_prompt], context_schema=PromptContext)
         self.confidence_threshold = confidence_threshold
 

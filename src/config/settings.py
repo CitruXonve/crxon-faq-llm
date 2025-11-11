@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     """Claude API settings"""
     CLAUDE_MODEL: str
+    CLAUDE_MAX_TOKENS: int
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(Path(__file__).parent.parent.parent, '.env'),

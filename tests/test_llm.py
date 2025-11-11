@@ -21,8 +21,8 @@ async def sent_user_message(llm_service: ClaudeLLMService, user_message: str, st
     print(
         f"Time taken to generate response: {(end_time - start_time):.2f} seconds")
     print("LLM response length:", len(resp["response"]))
-    print("LLM confidence:", {key: value for key,
-          value in resp.items() if key != "response"})
+    print(
+        f"LLM response: {json.dumps(resp, indent=4) if type(resp) is dict else resp}")
     return end_time
 
 
@@ -43,7 +43,7 @@ async def test_claude_llm_context_prompt():
     end_time = await sent_user_message(llm_service, "How to prepare for a Java interview?", end_time, chat_history)
 
     print(
-        f"Chat history: {json.dumps(chat_history, indent=4) if type(chat_history) is list else chat_history}")
+        f"Chat history length: {len(chat_history)}")
 
 
 if __name__ == "__main__":
