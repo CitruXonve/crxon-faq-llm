@@ -8,21 +8,15 @@ from src.service.knowledge_base import KnowledgeBaseServiceMarkdown
 async def sent_user_message(llm_service: ClaudeLLMService, user_message: str, start_time: float, chat_history: list[dict]):
     print(f"Sending user message: {user_message}")
     resp = await llm_service.generate_response(user_message, chat_history)
-    assert resp["response"] is not None and len(resp["response"].strip()) > 0
-    chat_history.append({
-        "role": "user",
-        "content": user_message
-    })
-    chat_history.append({
-        "role": "assistant",
-        "content": resp["response"]
-    })
+    assert resp["messages"] is not None and len(resp["messages"]) > 0
+    chat_history.clear()
+    chat_history.extend(resp["messages"])
     end_time = time.time()
     print(
         f"Time taken to generate response: {(end_time - start_time):.2f} seconds")
-    print("LLM response length:", len(resp["response"]))
+    print("LLM response length:", len(resp["messages"][-1].content))
     print(
-        f"LLM response: {json.dumps(resp, indent=4) if type(resp) is dict else resp}")
+        "LLM confidence:", json.dumps({key: value for key, value in resp.items() if key != "messages"}, indent=4) if type(resp) is dict else resp)
     return end_time
 
 
@@ -43,7 +37,7 @@ async def test_claude_llm_context_prompt():
     end_time = await sent_user_message(llm_service, "How to prepare for a Java interview?", end_time, chat_history)
 
     print(
-        f"Chat history length: {len(chat_history)}")
+        f"Chat history: {len(chat_history)}", json.dumps([{"role": msg.type, "content": msg.content} for msg in chat_history], indent=4))
 
 
 if __name__ == "__main__":

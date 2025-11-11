@@ -5,7 +5,7 @@ from typing import TypedDict
 from src.service.knowledge_base import KnowledgeBaseService
 from src.config.settings import settings
 from langchain.agents import create_agent
-from langchain.messages import AnyMessage, AIMessage
+from langchain.messages import AnyMessage, HumanMessage
 from langchain.agents.middleware import dynamic_prompt, ModelRequest
 from langchain_anthropic import ChatAnthropic
 
@@ -134,18 +134,19 @@ class ClaudeLLMService(LLMService):
 
         # Format messages for Claude
         formatted_messages: list[AnyMessage] = self._format_messages_for_claude(
-            user_message)
+            user_message, chat_history)
 
         # Call Claude API and get response
-        response = await self._call_claude(
+        new_messages: list[AnyMessage] = await self._call_claude(
             context,
             formatted_messages)
 
-        # Evaluate confidence
-        confidence = self._evaluate_confidence(response, context)
+        # Evaluate confidence against the last message
+        confidence = self._evaluate_confidence(
+            new_messages[-1].content, context)
 
         return {
-            "response": response,
+            "messages": new_messages,
             "confidence": confidence,
             "threshold": self.confidence_threshold,
             "needs_attention": confidence < self.confidence_threshold
@@ -155,18 +156,13 @@ class ClaudeLLMService(LLMService):
         self,
         context: list[dict],
         messages: list[dict[str, str]]
-    ) -> str:
+    ) -> list[AnyMessage]:
         try:
             response = await self.agent.ainvoke({
                 "messages": messages
             }, context={"kb_contexts": context})
 
-            # Extract text from response
-            # Claude returns content blocks, typically first block is text
-            for block in response["messages"]:
-                if isinstance(block, AIMessage):
-                    return block.content.strip()
-
+            return response["messages"]
         except Exception as e:
             logger.error(f"Error calling Claude API: {e}")
             return None
@@ -247,17 +243,11 @@ class ClaudeLLMService(LLMService):
 
     def _format_messages_for_claude(
         self,
-        user_message: str
+        user_message: str,
+        chat_history: list[AnyMessage] = []
     ) -> list[AnyMessage]:
-        messages = []
-
-        # Add current user message
-        messages.append({
-            "role": "user",
-            "content": user_message
-        })
-
-        return messages
+        # Add existing chat history and current user message
+        return [*chat_history, HumanMessage(content=user_message)]
 
     def _evaluate_confidence(self, response: str, context: list[dict]) -> float:
         confidence_score = 0.5  # Neutral starting point
