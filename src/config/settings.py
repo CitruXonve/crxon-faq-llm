@@ -6,6 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Application settings."""
+
+    # App settings
+    APP_TITLE: str = "CitruXonve FAQ Backend"
+    APP_DESCRIPTION: str = "A FastAPI backend of knowledge base, LLM and RAG for retrieval"
+    APP_VERSION: str = "1.0.0"
+
+    # Knowledge base settings
     project_root: Path = Path(__file__).parent.parent.parent
     KB_DIRECTORY: str = os.path.join(
         project_root, '.knowledge_sources')
