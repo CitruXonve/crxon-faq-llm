@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     project_root: Path = Path(__file__).parent.parent.parent
     KB_DIRECTORY: str = os.path.join(
         project_root, '.knowledge_sources')
+    KB_POST_TTL: int = 3600 * 24 * 7  # 7 days
 
     """Claude API settings"""
     CLAUDE_MODEL: str
