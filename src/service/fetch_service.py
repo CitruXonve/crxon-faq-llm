@@ -61,11 +61,3 @@ class GitHubRepoFetchService:
             f"Saved {saved_count} posts; {existing_count} posts already exist")
         print(
             f"Saved {saved_count} posts; {existing_count} posts already exist")
-
-
-if __name__ == "__main__":
-    fetcher = GitHubRepoFetchService(
-        repository_url="https://github.com/CitruXonve/devblog/tree/master/source/_posts",
-        raw_content_url="https://raw.githubusercontent.com/CitruXonve/devblog/refs/heads/master/")
-
-    fetcher.save_all_posts()
