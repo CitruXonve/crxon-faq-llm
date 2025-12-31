@@ -89,12 +89,12 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
 
     def __init__(self):
         self.kb_directory = Path(settings.KB_DIRECTORY)
-        self.chunk_size = 500
-        self.chunk_overlap = 100
+        self.chunk_size = settings.EMBEDDING_MODEL_CHUNK_SIZE
+        self.chunk_overlap = settings.EMBEDDING_MODEL_CHUNK_OVERLAP
 
-        # Load embedding model (384-dimensional, fast, good for FAQ)
-        logger.info("Loading embedding model: all-MiniLM-L6-v2")
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Load embedding model
+        logger.info(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
+        self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
         logger.info("Embedding model loaded successfully")
 
         # Initialize storage
@@ -160,11 +160,11 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
         sections = self._parse_markdown_sections(content)
 
         # Process each section
-        for heading, section_content in sections:
+        for section_index, (heading, section_content) in enumerate(sections):
             # Split large sections into smaller chunks
             section_chunks = self._chunk_section(section_content)
 
-            for idx, chunk_text in enumerate(section_chunks):
+            for chunk_index, chunk_text in enumerate(section_chunks):
                 # Add header context to chunk for better retrieval
                 chunk_with_context = self._add_context(heading, chunk_text)
 
@@ -172,7 +172,8 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
                     content=chunk_with_context,
                     source_file=file_path.name,
                     heading=heading,
-                    chunk_index=idx
+                    chunk_index=section_index *
+                    len(section_chunks) + chunk_index
                 )
                 self.chunks.append(chunk)
 
@@ -319,9 +320,9 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
         # Generate embeddings in batch (faster)
         embeddings = self.model.encode(
             texts,
-            batch_size=32,
-            show_progress_bar=True,
-            convert_to_numpy=True
+            batch_size=settings.EMBEDDING_MODEL_BATCH_SIZE,
+            show_progress_bar=settings.EMBEDDING_MODEL_SHOW_PROGRESS_BAR,
+            convert_to_numpy=settings.EMBEDDING_MODEL_CONVERT_TO_NUMPY
         )
 
         # Store embeddings
@@ -336,8 +337,8 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
     def search(
         self,
         query: str,
-        top_k: int = 3,
-        similarity_threshold: float = 0.3
+        top_k: int = settings.DEFAULT_TOP_K,
+        similarity_threshold: float = settings.DEFAULT_SIMILARITY_THRESHOLD
     ) -> list[dict]:
         """
         Semantic search for relevant chunks.

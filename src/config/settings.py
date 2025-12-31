@@ -18,8 +18,19 @@ class Settings(BaseSettings):
         project_root, '.knowledge_sources')
     KB_POST_TTL: int = 3600 * 24 * 7  # 7 days
 
+    # Embedding model settings
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # 384-dimensional, fast, good for FAQ
+    EMBEDDING_MODEL_CHUNK_SIZE: int = 500
+    EMBEDDING_MODEL_CHUNK_OVERLAP: int = 100
+    EMBEDDING_MODEL_BATCH_SIZE: int = 32
+    EMBEDDING_MODEL_SHOW_PROGRESS_BAR: bool = True
+    EMBEDDING_MODEL_CONVERT_TO_NUMPY: bool = True
+    DEFAULT_SIMILARITY_THRESHOLD: float = 0.3
+    DEFAULT_TOP_K: int = 3
+
     """Claude API settings"""
     CLAUDE_MODEL: str
+    CLAUDE_TEMPERATURE: float = 0.7  # Balanced - not too creative, not too rigid
     CLAUDE_MAX_TOKENS: int
 
     model_config = SettingsConfigDict(

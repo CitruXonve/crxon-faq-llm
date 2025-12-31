@@ -81,9 +81,16 @@ fastapi dev src/main.py --reload
 python -m unittest tests/*.py
 ```
 
+## In-depth
+
+### Embeddings
+
+The default semantic embedding model for this project is [`all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) from `sentence-transformers` - it maps sentences & paragraphs to a **384 dimensional** dense vector space and can be used for tasks like clustering or semantic search.
+
 ## TODOs
 
+- Support for various input file formats and multi-media parsing
 - MCP-based integration with OneNote etc.
-- Streaming response via server-sent events (SSE)
-- DB storage of sessions instead of in memory
+- Streaming responses via tokenization and server-sent events (SSE)
+- DB storage of sessions instead of in-memory
 - Fine-tuning on models, chunking and embedding

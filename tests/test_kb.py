@@ -1,4 +1,6 @@
+import json
 import time
+from src.config.settings import settings
 from src.service.knowledge_base import KnowledgeBaseServiceMarkdown
 import unittest
 
@@ -23,19 +25,30 @@ class TestKBService(unittest.TestCase):
         self.assertGreater(stats["total_sources"], 0)
         self.assertGreater(stats["embedding_dimensions"], 0)
         # Print stats
-        print(f"Knowledge Base Stats: {stats}")
+        print(
+            f"Knowledge Base Stats: {json.dumps({k: v for k, v in stats.items() if k != 'model_details' and k != 'sources'}, indent=4)}")
+        print(
+            f"Model details: {stats['model_details']}")
+        print(
+            f"Example sources of Markdown: {[source for source in stats['sources'] if source.endswith('.md')][:3]}")
+        print(
+            f"Example sources of PDF: {[source for source in stats['sources'] if source.endswith('.pdf')][:3]}")
 
     def test_query_1(self):
         query = "What is OLTP/ OLAP and their use cases?"
         search_results = self.kb_service.search(query, top_k=2)
         self.assertGreater(len(search_results), 0)
         print(f"Search results for '{query}': {len(search_results)}")
+        print(
+            f"Example results: {json.dumps([result for result in search_results if result['similarity_score'] > settings.DEFAULT_SIMILARITY_THRESHOLD][:2], indent=4)}")
 
     def test_query_2(self):
         query = "How to prepare for a Java interview?"
         search_results = self.kb_service.search(query, top_k=8)
         self.assertGreater(len(search_results), 0)
         print(f"Search results for '{query}': {len(search_results)}")
+        print(
+            f"Example results: {json.dumps([result for result in search_results if result['similarity_score'] > settings.DEFAULT_SIMILARITY_THRESHOLD][:2], indent=4)}")
 
 
 if __name__ == "__main__":
