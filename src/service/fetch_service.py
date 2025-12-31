@@ -1,11 +1,12 @@
 import logging
 import os
-from typing import Any
+import sys
 import requests
 from bs4 import BeautifulSoup
 import json
 
 from src.config.settings import settings
+from src.utility.spinner import Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ class GitHubRepoFetchService:
         return response.text
 
     def save_post_content(self, name: str, content: str) -> bool:
+        if not os.path.exists(settings.KB_DIRECTORY):
+            os.makedirs(settings.KB_DIRECTORY)
         if not os.path.exists(os.path.join(settings.KB_DIRECTORY, name)):
             with open(os.path.join(settings.KB_DIRECTORY, name), "w") as f:
                 f.write(content)
@@ -48,16 +51,22 @@ class GitHubRepoFetchService:
 
     def save_all_posts(self) -> None:
         post_list = self.fetch_post_list()
+        spinner = Spinner(total=len(post_list))
         existing_count = 0
         saved_count = 0
+
         for post in post_list:
+            spinner.spin()
+
             post_content = self.fetch_post_content(post["path"])
             saved = self.save_post_content(post["name"], post_content)
             if saved:
                 saved_count += 1
             else:
                 existing_count += 1
+
+        spinner.finish(
+            message=f"Done! Saved {saved_count} posts; {existing_count} posts already exist")
+
         logger.debug(
-            f"Saved {saved_count} posts; {existing_count} posts already exist")
-        print(
             f"Saved {saved_count} posts; {existing_count} posts already exist")
