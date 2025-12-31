@@ -6,9 +6,12 @@ Key Features:
 - Chunk text into semantic sections
 - Use sentence-transformers for embeddings (local, no API cost)
 - Cosine similarity search for retrieval
+- Embedding cache for faster startup when KB unchanged
 """
 
 import re
+import json
+import hashlib
 import numpy as np
 import logging
 from abc import ABC, abstractmethod
@@ -92,6 +95,13 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
         self.chunk_size = settings.EMBEDDING_MODEL_CHUNK_SIZE
         self.chunk_overlap = settings.EMBEDDING_MODEL_CHUNK_OVERLAP
 
+        # Embedding cache paths
+        self.cache_dir = Path(settings.EMBEDDING_CACHE_DIR)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.embeddings_cache_file = self.cache_dir / "embeddings.npy"
+        self.chunks_cache_file = self.cache_dir / "chunks.json"
+        self.hash_cache_file = self.cache_dir / "kb_hash.txt"
+
         # Load embedding model (cached locally in EMBEDDING_MODEL_CACHE_DIR)
         logger.info(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
         self.model = SentenceTransformer(
@@ -104,11 +114,19 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
         self.chunks: list[MarkdownChunk] = []
         self.embeddings: Optional[np.ndarray] = None
 
-        # Load and process knowledge base
-        self._load_knowledge_base()
-        self._create_embeddings()
+        # Compute current KB hash
+        current_hash = self._compute_kb_hash()
 
-        logger.info(f"Knowledge base loaded: {len(self.chunks)} chunks")
+        # Try to load from cache if KB unchanged
+        if self._load_from_cache(current_hash):
+            logger.info(f"Loaded {len(self.chunks)} chunks from cache")
+        else:
+            # Load and process knowledge base from scratch
+            logger.info("Cache miss or invalid - regenerating embeddings...")
+            self._load_knowledge_base()
+            self._create_embeddings()
+            self._save_to_cache(current_hash)
+            logger.info(f"Knowledge base loaded: {len(self.chunks)} chunks")
 
     def get_all_sources(self) -> list[str]:
         """Get list of all source files in KB"""
@@ -129,6 +147,95 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
             "sources": self.get_all_sources(),
             "model_details": self.model,
         }
+
+    def _compute_kb_hash(self) -> str:
+        """
+        Compute a hash of the KB directory state.
+        Uses file names, sizes, and modification times to detect changes.
+        """
+        if not self.kb_directory.exists():
+            return ""
+
+        hash_data = []
+        md_files = sorted(self.kb_directory.glob("*.md"))
+
+        for md_file in md_files:
+            stat = md_file.stat()
+            hash_data.append(f"{md_file.name}:{stat.st_size}:{stat.st_mtime}")
+
+        # Also include chunk settings in hash (if settings change, re-embed)
+        hash_data.append(f"chunk_size:{self.chunk_size}")
+        hash_data.append(f"chunk_overlap:{self.chunk_overlap}")
+        hash_data.append(f"model:{settings.EMBEDDING_MODEL}")
+
+        hash_string = "|".join(hash_data)
+        return hashlib.sha256(hash_string.encode()).hexdigest()
+
+    def _load_from_cache(self, current_hash: str) -> bool:
+        """
+        Load embeddings and chunks from local cache if valid.
+        Returns True if cache was loaded successfully, False otherwise.
+        """
+        try:
+            # Check if all cache files exist
+            if not all([
+                self.embeddings_cache_file.exists(),
+                self.chunks_cache_file.exists(),
+                self.hash_cache_file.exists()
+            ]):
+                logger.info("Cache files not found")
+                return False
+
+            # Check if hash matches
+            cached_hash = self.hash_cache_file.read_text().strip()
+            if cached_hash != current_hash:
+                logger.info("KB has changed - cache invalidated")
+                return False
+
+            # Load embeddings
+            self.embeddings = np.load(self.embeddings_cache_file)
+
+            # Load chunks
+            with open(self.chunks_cache_file, 'r', encoding='utf-8') as f:
+                chunks_data = json.load(f)
+
+            self.chunks = []
+            for i, chunk_dict in enumerate(chunks_data):
+                chunk = MarkdownChunk(
+                    content=chunk_dict["content"],
+                    source_file=chunk_dict["source_file"],
+                    heading=chunk_dict["heading"],
+                    chunk_index=chunk_dict["chunk_index"]
+                )
+                chunk.embedding = self.embeddings[i]
+                self.chunks.append(chunk)
+
+            logger.info(
+                f"Cache loaded: {len(self.chunks)} chunks, embeddings shape {self.embeddings.shape}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to load from cache: {e}")
+            return False
+
+    def _save_to_cache(self, current_hash: str) -> None:
+        """Save embeddings and chunks to cache."""
+        try:
+            # Save embeddings
+            np.save(self.embeddings_cache_file, self.embeddings)
+
+            # Save chunks (without embeddings - they're in the .npy file)
+            chunks_data = [chunk.to_dict() for chunk in self.chunks]
+            with open(self.chunks_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(chunks_data, f, ensure_ascii=False)
+
+            # Save hash
+            self.hash_cache_file.write_text(current_hash)
+
+            logger.info(f"Cache saved to {self.cache_dir}")
+
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
 
     def _load_knowledge_base(self) -> None:
         """Load all markdown files from the knowledge base directory"""

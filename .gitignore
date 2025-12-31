@@ -226,3 +226,6 @@ __marimo__/
 
 # SentenceTransformer stuff
 .models/
+
+# Embedding cache
+.embedding_cache/
