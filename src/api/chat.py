@@ -52,18 +52,18 @@ async def create_chat_session(
 
     chat_history = session_service.get_history(session_id)
 
-    response = await llm_service.generate_response(request.message, chat_history)
+    response, _ = await llm_service.generate_response(request.message, chat_history)
 
-    if not response["messages"] or type(response["messages"]) != list or len(response["messages"]) == 0:
+    if not response or type(response) != list or len(response) == 0:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No response from LLM")
 
-    session_service.set_history(session_id, response["messages"])
+    session_service.set_history(session_id, response)
 
     return {
         "status": "success",
         "session_id": session_id,
-        "messages": response["messages"]
+        "messages": response
     }
 
 

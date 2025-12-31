@@ -2,8 +2,12 @@ import json
 import time
 import asyncio
 import unittest
-from src.service.llm_service import ClaudeLLMService
+
+from langchain.messages import AIMessage
+from langchain_core.messages import HumanMessage
+from src.service.llm_service import ClaudeLLMService, evaluate_confidence
 from src.service.knowledge_base import KnowledgeBaseServiceMarkdown
+from src.utility.spinner import Spinner
 
 
 class TestLLM(unittest.IsolatedAsyncioTestCase):
@@ -13,8 +17,6 @@ class TestLLM(unittest.IsolatedAsyncioTestCase):
     def setUpClass(cls):
         """Run once before all tests in this class."""
         start_time = time.time()
-        # kb_service = KnowledgeBaseServiceMarkdown()
-        # cls.llm_service = ClaudeLLMService(kb_service)
         cls.llm_service = ClaudeLLMService(KnowledgeBaseServiceMarkdown())
         end_time = time.time()
         print(
@@ -23,16 +25,17 @@ class TestLLM(unittest.IsolatedAsyncioTestCase):
 
     async def _sent_user_message(self, user_message: str, start_time: float, chat_history: list[dict]):
         print(f"Sending user message: {user_message}")
-        resp = await self.llm_service.generate_response(user_message, chat_history)
-        assert resp["messages"] is not None and len(resp["messages"]) > 0
+        resp, context = await self.llm_service.generate_response(user_message, chat_history)
+        assert resp is not None and len(resp) > 0
         chat_history.clear()
-        chat_history.extend(resp["messages"])
+        chat_history.extend(resp)
+        evaluation = evaluate_confidence(resp[-1].content, context)
         end_time = time.time()
         print(
             f"Time taken to generate response: {(end_time - start_time):.2f} seconds")
-        print("LLM response length:", len(resp["messages"][-1].content))
+        print("LLM response length:", len(resp[-1].content))
         print(
-            "LLM confidence:", json.dumps({key: value for key, value in resp.items() if key != "messages"}, indent=4) if type(resp) is dict else resp)
+            "LLM confidence:", json.dumps(evaluation, indent=4))
         return end_time
 
     async def test_claude_llm_context_prompt(self):
@@ -59,6 +62,39 @@ class TestLLM(unittest.IsolatedAsyncioTestCase):
         print(
             f"Chat response: {len(chat_history)}", json.dumps({"role": chat_history[-1].type, "content": chat_history[-1].content}, indent=4))
 
+    async def _stream_user_message(self, user_message: str, start_time: float, chat_history: list[dict]):
+        chat_history.append(HumanMessage(content=user_message))
+        print(f"Sending user message: {user_message}")
+        spinner = Spinner()
+        message_chunks = []
+        async for message_chunk in self.llm_service.generate_stream_response(user_message, chat_history):
+            spinner.spin(type_str="tokens")
+            message_chunks.append(message_chunk.content)
+        end_time = time.time()
+        spinner.finish(
+            message=f"Done streaming {len(message_chunks)} chunks. Total time taken: {(end_time - start_time):.2f} seconds")
+        self.assertGreater(len(message_chunks), 1)
+        combined = ''.join(message_chunks)
+        self.assertGreater(len(combined), 10)
+        print("Stream response:\n", combined)
+        chat_history.append(AIMessage(content=combined))
 
-# if __name__ == "__main__":
-#     asyncio.run(unittest.main())
+        return end_time
+
+    async def test_claude_llm_stream_prompt(self):
+        chat_history = []
+        start_time = time.time()
+        end_time = await self._stream_user_message("What is multi-threading in Python?", start_time, chat_history)
+        self.assertEqual(len(chat_history), 2)
+        print(
+            f"Time taken to stream response: {(end_time - start_time):.2f} seconds")
+
+        start_time = time.time()
+        end_time = await self._stream_user_message("What is OLTP/ OLAP and their use cases?", start_time, chat_history)
+        self.assertEqual(len(chat_history), 4)
+        print(
+            f"Time taken to stream response: {(end_time - start_time):.2f} seconds")
+
+
+if __name__ == "__main__":
+    asyncio.run(unittest.main())
