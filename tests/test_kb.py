@@ -15,7 +15,7 @@ class TestKBService(unittest.TestCase):
         cls.kb_service = KnowledgeBaseServiceMarkdown()
         end_time = time.time()
         print(
-            f"Time taken to load embedding model: {end_time - start_time} seconds")
+            f"Time taken to initialize knowledge base with embeddings: {end_time - start_time} seconds")
 
     def test_get_stats(self):
         self.assertIsNotNone(self.kb_service.model)

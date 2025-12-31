@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Embedding model settings
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # 384-dimensional, fast, good for FAQ
+    EMBEDDING_MODEL_CACHE_DIR: str = os.path.join(project_root, '.models')
     EMBEDDING_MODEL_CHUNK_SIZE: int = 500
     EMBEDDING_MODEL_CHUNK_OVERLAP: int = 100
     EMBEDDING_MODEL_BATCH_SIZE: int = 32

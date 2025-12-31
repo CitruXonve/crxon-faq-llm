@@ -92,9 +92,12 @@ class KnowledgeBaseServiceMarkdown(KnowledgeBaseService):
         self.chunk_size = settings.EMBEDDING_MODEL_CHUNK_SIZE
         self.chunk_overlap = settings.EMBEDDING_MODEL_CHUNK_OVERLAP
 
-        # Load embedding model
+        # Load embedding model (cached locally in EMBEDDING_MODEL_CACHE_DIR)
         logger.info(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
-        self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
+        self.model = SentenceTransformer(
+            settings.EMBEDDING_MODEL,
+            cache_folder=settings.EMBEDDING_MODEL_CACHE_DIR
+        )
         logger.info("Embedding model loaded successfully")
 
         # Initialize storage
