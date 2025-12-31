@@ -47,6 +47,28 @@ class TestChat(unittest.TestCase):
                 print(f"Error: {e}")
                 raise
 
+    def test_chat_stream(self):
+        """Test streaming by iterating over chunks"""
+        with TestClient(app) as client:
+            with client.stream("POST", "/api/chat-stream", json={
+                "message": "How do I perform back-of-envelope estimation?"
+            }) as resp:
+                print("Resp:", resp)
+                self.assertEqual(resp.status_code, 200)
+
+                text_chunks = []
+                for chunk in resp.iter_text():
+                    text_chunks.append(chunk)
+
+                # Verify received chunks
+                self.assertGreater(len(text_chunks), 0)
+
+                # Reconstruct full response
+                full_response = "".join(text_chunks)
+                self.assertGreater(len(full_response), 0)
+
+                print("Full response:", full_response)
+
 
 if __name__ == "__main__":
     unittest.main()
