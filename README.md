@@ -61,9 +61,29 @@ Optional: in case of the error ` pyproject.toml changed significantly since poet
 poetry lock
 ```
 
+### Prepare the knowledge
+
+The default source of knowledge is [`Dev Blog of CitruXonve`](https://github.com/CitruXonve/devblog), which can be accessed using the following script in the project directory. See also `/tests/test_fetcher.py`.
+
+```python
+>>> from src.service.fetch_service import GitHubRepoFetchService
+>>> fetcher = GitHubRepoFetchService(\
+...     repository_url="https://github.com/CitruXonve/devblog/tree/master/source/_posts",\
+...     raw_content_url="https://raw.githubusercontent.com/CitruXonve/devblog/refs/heads/master/")
+>>> fetcher.save_all_posts()
+```
+
+Currently, the supported knowledge document format is `markdown`. PDF format support will be available soon.
+
+Additional document of knowledge can be manually added into `.knowledge_sources`.
+
 ### Run server locally
 
 ```bash
+# production mode
+fastapi run src/main.py
+
+# development mode
 fastapi dev src/main.py
 ```
 
@@ -94,3 +114,4 @@ The default semantic embedding model for this project is [`all-MiniLM-L6-v2`](ht
 - Streaming responses via tokenization and server-sent events (SSE)
 - DB storage of sessions instead of in-memory
 - Fine-tuning on models, chunking and embedding
+- Containerization preparation

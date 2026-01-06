@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.config.settings import settings
 from src.service.knowledge_base import KnowledgeBaseServiceMarkdown
@@ -13,6 +14,15 @@ app = FastAPI(
     title=settings.APP_TITLE,
     description=settings.APP_DESCRIPTION,
     version=settings.APP_VERSION,
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["localhost:3000", "127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(chat_router)
@@ -30,7 +40,7 @@ async def startup_event():
     print("Resources initialized successfully")
 
 
-@app.get("/")
+@app.get("/api/health")
 async def root():
     """
     Root endpoint to verify the API is running.
