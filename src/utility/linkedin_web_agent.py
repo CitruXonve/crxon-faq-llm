@@ -36,7 +36,7 @@ from langchain_core.tools import tool
 
 from src.config.settings import settings
 from src.utility.browser_manager import BrowserManager
-from src.utility.linkedin_feed_parser import activity_id_from_url, parse_feed_posts
+from src.utility.linkedin_feed_collect import collect_raw_feed_posts_json
 from src.utility.spinner import Spinner
 
 logger = logging.getLogger(__name__)
@@ -402,37 +402,13 @@ class LinkedInWebAgent:
 
             Cap ``max_posts`` is enforced against the agent run limit."""
             target = max_posts if max_posts is not None else agent_max_posts
-            target = max(1, min(int(target), agent_max_posts))
-            sr = max(0, min(int(scroll_rounds), 10))
-
-            merged: list[dict[str, str]] = []
-            seen: set[str] = set()
-
-            def _key(row: dict[str, str]) -> str:
-                uid = activity_id_from_url(row.get("post_url", "") or "")
-                return uid or (row.get("post_url") or "")[:512]
-
-            for i in range(sr + 1):
-                html = await browser.get_page_html(html_selector)
-                if not html:
-                    logger.warning("collect_raw_feed_posts: empty HTML")
-                    break
-                batch = parse_feed_posts(html)
-                for row in batch:
-                    k = _key(row)
-                    if k in seen:
-                        continue
-                    seen.add(k)
-                    merged.append(dict(row))
-                    if len(merged) >= target:
-                        break
-                if len(merged) >= target:
-                    break
-                if i < sr:
-                    await browser.scroll(800)
-                    await asyncio.sleep(0.75)
-
-            return json.dumps(merged[:target], ensure_ascii=False)
+            return await collect_raw_feed_posts_json(
+                browser,
+                max_posts=int(target),
+                scroll_rounds=scroll_rounds,
+                html_selector=html_selector,
+                agent_max_posts=agent_max_posts,
+            )
 
         @tool
         async def wait_for(

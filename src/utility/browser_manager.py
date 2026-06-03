@@ -430,3 +430,9 @@ class BrowserManager:
                 "using this profile; Playwright launch will fail if so.",
                 lock_path,
             )
+
+
+if __name__ == "__main__":
+    from src.utility.browser_manager_cli import main
+
+    raise SystemExit(main())

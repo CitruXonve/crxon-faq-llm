@@ -141,6 +141,62 @@ def _rows_from_urls(
     return rows
 
 
+def _extract_phase_c_anchor_climb(soup: BeautifulSoup, snippet_max_len: int) -> list[dict[str, str]]:
+    """Climb the DOM from feed/update anchors to find post containers.
+
+    Works on current LinkedIn React DOM where class names are obfuscated — no
+    class-based selector assumptions. Stops climbing when a node has > 100 chars
+    of text (the first level that carries meaningful post content).
+    """
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for anchor in soup.find_all("a", href=True):
+        href = html_lib.unescape(anchor["href"])
+        if "/feed/update/" not in href and "/posts/" not in href:
+            continue
+        post_url = normalize_linkedin_url(href)
+        if not post_url:
+            continue
+        key = _dedupe_key(post_url)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        text = ""
+        author = ""
+        rel_time = ""
+        node = anchor.parent
+        for _ in range(14):
+            if node is None or getattr(node, "name", None) in ("html", "body", None):
+                break
+            node_text = node.get_text(separator=" ", strip=True)
+            if len(node_text) > 100:
+                text = node_text
+                for a in node.find_all("a", href=True):
+                    h = html_lib.unescape(a["href"])
+                    if "/in/" in h and "/company/" not in h:
+                        nu = normalize_linkedin_url(h)
+                        if nu and "/feed/" not in nu:
+                            author = nu
+                            break
+                tel = node.find("time")
+                if tel:
+                    rel_time = (tel.get("datetime") or tel.get_text(strip=True) or "")[:120]
+                break
+            node = node.parent
+
+        rows.append(
+            {
+                "post_url": post_url,
+                "author_profile_url": author,
+                "text_snippet": _truncate(text, snippet_max_len),
+                "relative_time": rel_time,
+            }
+        )
+    return rows
+
+
 def _extract_phase_b_cards(soup: BeautifulSoup, snippet_max_len: int) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -228,11 +284,6 @@ def parse_feed_posts(
     urls = _collect_urls_phase_a(plain, soup)
     rows_a = _rows_from_urls(urls, plain, snippet_max_len)
 
-    if len(rows_a) >= _PHASE_A_DOM_THRESHOLD:
-        return rows_a
-
-    rows_b = _extract_phase_b_cards(soup, snippet_max_len)
-
     merged: dict[str, dict[str, str]] = {}
     order: list[str] = []
 
@@ -252,8 +303,19 @@ def parse_feed_posts(
 
     for r in rows_a:
         add_row(r)
-    for r in rows_b:
-        add_row(r)
+
+    missing_text = not order or any(not merged[k].get("text_snippet") for k in order)
+
+    if len(rows_a) < _PHASE_A_DOM_THRESHOLD or missing_text:
+        rows_b = _extract_phase_b_cards(soup, snippet_max_len)
+        for r in rows_b:
+            add_row(r)
+
+        still_missing = not order or any(not merged[k].get("text_snippet") for k in order)
+        if still_missing:
+            rows_c = _extract_phase_c_anchor_climb(soup, snippet_max_len)
+            for r in rows_c:
+                add_row(r)
 
     return [merged[k] for k in order]
 
