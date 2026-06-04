@@ -311,9 +311,16 @@ class BrowserManager:
         return await page.evaluate(wrapped)
 
     async def scroll(self, pixels: int) -> None:
-        """Scroll the page by ``pixels`` (positive = down, negative = up)."""
+        """Scroll the page by ``pixels`` (positive = down, negative = up).
+
+        Prefers the first overflow-scroll/auto container with meaningful height
+        (e.g. LinkedIn's #workspace) over window, which is a no-op on SPA pages
+        where the document itself doesn't scroll.
+        """
         page = self._ensure_started()
-        await page.evaluate(f"window.scrollBy(0, {int(pixels)})")
+        await page.evaluate(
+            f"(document.querySelector('#workspace') || document.documentElement).scrollBy(0, {int(pixels)})"
+        )
 
     async def wait_for(
         self,

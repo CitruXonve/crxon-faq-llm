@@ -65,7 +65,8 @@ Every flag maps to `BrowserManager.__init__`:
 | `screenshot [--out path.png]` | PNG (base64 preview in JSON if no `--out`) |
 | `scroll PIXELS` | Vertical scroll |
 | `wait [--selector SEL] [--timeout-ms N]` | Wait for selector or sleep |
-| `feed-posts [--max-posts N] [--scroll-rounds N]` | LinkedIn feed JSON (compact) |
+| `feed-posts [--max-posts N] [--scroll-rounds N]` | LinkedIn feed JSON (compact); scrolls down until `max_posts`, plateau, or budget |
+| `hiring-posts [--max-posts N] [--scroll-px N] [--wait-ms N] [--max-scrolls N]` | Hiring-announcement posts; structured JSON with company/job/author/post URLs |
 | `check-auth` | Check LinkedIn auth state for profile (errors if not signed in) |
 | `sign-in [--timeout-s N]` | Open LinkedIn login and wait for manual sign-in |
 | `run --steps JSON` | Multiple ops in one browser session |
@@ -80,7 +81,7 @@ poetry run python scripts/browser_manager.py run --steps '[
 ]'
 ```
 
-Supported `op` values: `navigate`, `url`, `title`, `text`, `html`, `js`, `screenshot`, `scroll`, `wait`, `feed-posts`, `check-auth`, `sign-in`.
+Supported `op` values: `navigate`, `url`, `title`, `text`, `html`, `js`, `screenshot`, `scroll`, `wait`, `scroll-until`, `feed-posts`, `hiring-posts`, `check-auth`, `sign-in`.
 
 ## JSON stdout
 

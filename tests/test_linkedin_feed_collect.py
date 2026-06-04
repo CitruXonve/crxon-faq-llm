@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.utility.linkedin_feed_collect import collect_raw_feed_posts_from_page
+from src.utility.linkedin_feed_collect import (
+    _scroll_budget,
+    collect_raw_feed_posts_from_page,
+)
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -42,7 +45,73 @@ class TestCollectRawFeedPostsFromPage(unittest.IsolatedAsyncioTestCase):
 
         urls = [r["post_url"] for r in rows]
         self.assertEqual(len(urls), len(set(urls)))
+        self.assertGreaterEqual(browser.scroll.await_count, 1)
+        self.assertLessEqual(browser.scroll.await_count, 2)
+
+    async def test_scrolls_until_max_posts(self) -> None:
+        html = (_FIXTURES / "linkedin_feed_dom_cards.html").read_text(encoding="utf-8")
+        browser = MagicMock()
+        browser.get_page_html = AsyncMock(return_value=html)
+        browser.scroll = AsyncMock()
+
+        rows = await collect_raw_feed_posts_from_page(
+            browser,
+            max_posts=1,
+            scroll_rounds=10,
+        )
+
+        self.assertEqual(len(rows), 1)
+        browser.scroll.assert_not_called()
+
+    async def test_stops_on_plateau_when_target_not_met(self) -> None:
+        html = (_FIXTURES / "linkedin_feed_dom_cards.html").read_text(encoding="utf-8")
+        browser = MagicMock()
+        browser.get_page_html = AsyncMock(return_value=html)
+        browser.scroll = AsyncMock()
+
+        rows = await collect_raw_feed_posts_from_page(
+            browser,
+            max_posts=50,
+            scroll_rounds=10,
+        )
+
+        self.assertLess(len(rows), 50)
         self.assertEqual(browser.scroll.await_count, 2)
+
+    async def test_scrolls_until_target_with_growing_html(self) -> None:
+        browser = MagicMock()
+        browser.get_page_html = AsyncMock(return_value="<html></html>")
+        browser.scroll = AsyncMock()
+
+        def _row(n: int) -> dict[str, str]:
+            return {
+                "post_url": f"https://www.linkedin.com/feed/update/urn:li:activity:{n}",
+                "author_profile_url": "",
+                "text_snippet": f"post {n}",
+                "relative_time": "",
+            }
+
+        with patch(
+            "src.utility.linkedin_feed_collect.parse_feed_posts",
+            side_effect=[[_row(1)], [_row(2)], [_row(3)]],
+        ):
+            rows = await collect_raw_feed_posts_from_page(
+                browser,
+                max_posts=3,
+                scroll_rounds=10,
+            )
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(browser.scroll.await_count, 2)
+
+
+class TestScrollBudget(unittest.TestCase):
+    def test_zero_means_no_scroll(self) -> None:
+        self.assertEqual(_scroll_budget(scroll_rounds=0, target=5), 0)
+
+    def test_at_least_target_when_scroll_enabled(self) -> None:
+        self.assertEqual(_scroll_budget(scroll_rounds=3, target=5), 5)
+        self.assertEqual(_scroll_budget(scroll_rounds=10, target=5), 10)
 
 
 if __name__ == "__main__":

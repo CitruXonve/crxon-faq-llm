@@ -12,7 +12,7 @@ from typing import Any
 
 from src.utility.browser_manager import BrowserManager
 from src.utility.linkedin_auth import is_linkedin_authenticated, wait_for_linkedin_sign_in
-from src.utility.linkedin_feed_collect import collect_raw_feed_posts_from_page
+from src.utility.linkedin_feed_collect import collect_hiring_posts_from_page, collect_raw_feed_posts_from_page
 
 _PREVIEW_B64_CHARS = 120
 
@@ -213,12 +213,46 @@ async def _execute_step(bm: BrowserManager, step: dict[str, Any]) -> Any:
         await bm.wait_for(selector=selector, timeout_ms=timeout_ms)
         return {"waited": True, "selector": selector}
 
+    if op == "scroll-until":
+        selector = step.get("selector")
+        if not selector:
+            raise ValueError("scroll-until step requires 'selector'")
+        min_count = int(step.get("min_count", 1))
+        scroll_px = int(step.get("pixels", 800))
+        wait_ms = int(step.get("wait_ms", 2000))
+        max_rounds = int(step.get("max_rounds", 20))
+        rounds = 0
+        while rounds < max_rounds:
+            count = await bm.execute_javascript(
+                f"return document.querySelectorAll({selector!r}).length"
+            )
+            if int(count or 0) >= min_count:
+                return {"rounds": rounds, "count": count, "selector": selector}
+            await bm.scroll(scroll_px)
+            await bm.wait_for(timeout_ms=wait_ms)
+            rounds += 1
+        count = await bm.execute_javascript(
+            f"return document.querySelectorAll({selector!r}).length"
+        )
+        return {"rounds": rounds, "count": count, "selector": selector, "exhausted": True}
+
     if op == "feed-posts":
         rows = await collect_raw_feed_posts_from_page(
             bm,
             max_posts=int(step.get("max_posts", 5)),
             scroll_rounds=int(step.get("scroll_rounds", 3)),
             html_selector=step.get("html_selector"),
+        )
+        return {"posts": rows}
+
+    if op == "hiring-posts":
+        rows = await collect_hiring_posts_from_page(
+            bm,
+            max_posts=int(step.get("max_posts", 10)),
+            scroll_px=int(step.get("scroll_px", 800)),
+            wait_ms=int(step.get("wait_ms", 2000)),
+            max_scrolls=int(step.get("max_scrolls", 25)),
+            plateau_limit=int(step.get("plateau_limit", 3)),
         )
         return {"posts": rows}
 
@@ -306,6 +340,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_feed.add_argument("--max-posts", type=int, default=5)
     p_feed.add_argument("--scroll-rounds", type=int, default=3)
     p_feed.add_argument("--html-selector", default=None)
+
+    p_hiring = sub.add_parser(
+        "hiring-posts",
+        help="Collect LinkedIn hiring-announcement posts as structured JSON",
+    )
+    p_hiring.add_argument("--max-posts", type=int, default=10)
+    p_hiring.add_argument("--scroll-px", type=int, default=800)
+    p_hiring.add_argument("--wait-ms", type=int, default=2000)
+    p_hiring.add_argument("--max-scrolls", type=int, default=25)
+    p_hiring.add_argument("--plateau-limit", type=int, default=7)
 
     sub.add_parser(
         "check-auth",
@@ -470,6 +514,23 @@ async def _async_main(ns: argparse.Namespace) -> int:
                 return {"posts": rows}
 
             data = await _with_browser(bm, cmd, _feed)
+            _emit_ok(cmd, data, browser=bm)
+            return 0
+
+        if cmd == "hiring-posts":
+
+            async def _hiring(b: BrowserManager) -> dict[str, Any]:
+                rows = await collect_hiring_posts_from_page(
+                    b,
+                    max_posts=ns.max_posts,
+                    scroll_px=ns.scroll_px,
+                    wait_ms=ns.wait_ms,
+                    max_scrolls=ns.max_scrolls,
+                    plateau_limit=ns.plateau_limit,
+                )
+                return {"posts": rows}
+
+            data = await _with_browser(bm, cmd, _hiring)
             _emit_ok(cmd, data, browser=bm)
             return 0
 

@@ -17,6 +17,7 @@ Invoke a skill by name (e.g. `/browser-manager`, `@linkedin-job-search`). Each s
 |-------|------|----------|
 | **browser-manager** | [browser-manager/SKILL.md](browser-manager/SKILL.md) | Generic Playwright automation: navigate, scrape, JS, screenshots, feed JSON. Headless/CI/production (not `cursor-ide-browser`). |
 | **linkedin-sign-in** | [linkedin-sign-in/SKILL.md](linkedin-sign-in/SKILL.md) | Manual LinkedIn login only. Ends when `check-auth` succeeds. Does **not** start job search. |
+| **linkedin-feed-collect** | [linkedin-feed-collect/SKILL.md](linkedin-feed-collect/SKILL.md) | Collect hiring-announcement posts from the LinkedIn feed → structured JSON (company, job, author, post URLs). Uses `hiring-posts` op. |
 | **linkedin-job-search** | [linkedin-job-search/SKILL.md](linkedin-job-search/SKILL.md) | Hiring feed scrape → filter → `.export/linkedin_posts_*.json`. **Step 0** calls sign-in if needed. |
 
 ### Orchestration (LinkedIn)

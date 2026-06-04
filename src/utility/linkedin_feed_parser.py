@@ -71,9 +71,13 @@ def activity_id_from_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _dedupe_key(post_url: str) -> str:
+def _dedupe_key(post_url: str, author_url: str = "") -> str:
     aid = activity_id_from_url(post_url)
-    return f"activity:{aid}" if aid else post_url.split("?", 1)[0]
+    if aid:
+        return f"activity:{aid}"
+    if post_url:
+        return post_url.split("?", 1)[0]
+    return f"author:{author_url}" if author_url else ""
 
 
 def _guess_snippet_near_activity(plain: str, url: str) -> str:
@@ -197,6 +201,61 @@ def _extract_phase_c_anchor_climb(soup: BeautifulSoup, snippet_max_len: int) -> 
     return rows
 
 
+def _extract_phase_d_feed_headers(soup: BeautifulSoup, snippet_max_len: int) -> list[dict[str, str]]:
+    """Extract posts via 'Feed post' span headers in the new obfuscated LinkedIn DOM.
+
+    LinkedIn's current React DOM has no direct /feed/update/ anchors. Posts are
+    identified by a <span>Feed post</span> header adjacent to an author /in/ link.
+    Uses the author URL as the dedup key when no post URL is present.
+    """
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for header in soup.find_all("span", string=re.compile(r"^Feed post$", re.I)):
+        node = header.parent
+        for _ in range(25):
+            if node is None or getattr(node, "name", None) in ("html", "body", None):
+                break
+            if len(node.get_text(separator=" ", strip=True)) > 200:
+                break
+            node = node.parent
+
+        if node is None or len(node.get_text(strip=True)) < 200:
+            continue
+
+        author = ""
+        for a in node.find_all("a", href=True):
+            href = html_lib.unescape(a["href"])
+            if "/in/" in href and "/company/" not in href:
+                nu = normalize_linkedin_url(href)
+                if nu and "/feed/" not in nu:
+                    author = nu
+                    break
+
+        if not author or author in seen:
+            continue
+        seen.add(author)
+
+        text = node.get_text(separator=" ", strip=True)
+        text = re.sub(r"^Feed post\s*", "", text, flags=re.I).strip()
+
+        rel_time = ""
+        tel = node.find("time")
+        if tel:
+            rel_time = (tel.get("datetime") or tel.get_text(strip=True) or "")[:120]
+
+        rows.append(
+            {
+                "post_url": "",
+                "author_profile_url": author,
+                "text_snippet": _truncate(text, snippet_max_len),
+                "relative_time": rel_time,
+            }
+        )
+
+    return rows
+
+
 def _extract_phase_b_cards(soup: BeautifulSoup, snippet_max_len: int) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -288,7 +347,9 @@ def parse_feed_posts(
     order: list[str] = []
 
     def add_row(r: dict[str, str]) -> None:
-        key = _dedupe_key(r["post_url"])
+        key = _dedupe_key(r["post_url"], r.get("author_profile_url", ""))
+        if not key:
+            return
         if key in merged:
             prev = merged[key]
             if not prev.get("text_snippet") and r.get("text_snippet"):
@@ -316,6 +377,10 @@ def parse_feed_posts(
             rows_c = _extract_phase_c_anchor_climb(soup, snippet_max_len)
             for r in rows_c:
                 add_row(r)
+
+        rows_d = _extract_phase_d_feed_headers(soup, snippet_max_len)
+        for r in rows_d:
+            add_row(r)
 
     return [merged[k] for k in order]
 

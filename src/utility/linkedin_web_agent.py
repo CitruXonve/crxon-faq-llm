@@ -58,7 +58,7 @@ GUARDRAILS:
 - Never paste raw HTML into your responses; bulk feed ingestion is done server-side via ``collect_raw_feed_posts`` (BeautifulSoup), which returns compact JSON only.
 - Never paste base64 screenshot payloads back into your responses; treat them as opaque evidence only.
 - Never invent URLs -- only record URLs you have observed from tool output (e.g. ``collect_raw_feed_posts``) or visible text from targeted extraction.
-- Prefer ``collect_raw_feed_posts`` over ``extract_visible_text`` for loading many feed posts (lower tokens). Use the available tools to navigate or scroll only as needed outside that flow.
+- Prefer ``collect_raw_feed_posts`` over ``extract_visible_text`` for loading many feed posts (lower tokens). That tool scrolls down on the **current** page until ``max_posts`` or a feed plateau — do **not** call ``navigate`` again to the feed to load more posts. If the count is low, call ``collect_raw_feed_posts`` again with a higher ``scroll_rounds``, or ``scroll`` then ``collect_raw_feed_posts`` on the same session.
 - In ``execute_javascript``, ``document.querySelector`` / ``querySelectorAll`` only accept **browser CSS** (as in DevTools). Do not use Playwright-only selectors such as ``:has-text()``, ``:nth-match()``, or ``text=`` — they will throw. Prefer ``aria-label``, role-based queries, XPath via ``document.evaluate``, or walking the DOM.
 
 OUTPUT REQUIREMENTS:
@@ -72,7 +72,7 @@ DEFAULT_LINKEDIN_TASK_TEMPLATE = """
 Execute the following steps IN ORDER using the available tools:
 
 1. Navigate to the LinkedIn feed page (https://www.linkedin.com/feed/), then click "sort by" and select "recent".
-2. Call ``collect_raw_feed_posts`` to gather up to {max_posts} raw posts (parses HTML in Python; scroll as needed via that tool — do not paste HTML). Keep posts published within the last {recency_hours} hours based on ``relative_time`` / snippet text when present.
+2. Call ``collect_raw_feed_posts`` once (or again with higher ``scroll_rounds`` if needed) to gather up to {max_posts} raw posts — it scrolls down automatically; do **not** re-navigate to the feed to load more. Keep posts published within the last {recency_hours} hours based on ``relative_time`` / snippet text when present.
 3. For each raw post that looks like a hiring announcement, record:
    a. The company's LinkedIn URL.
    b. The job listing URL (if present, otherwise null).
@@ -398,7 +398,10 @@ class LinkedInWebAgent:
 
             Raw HTML is never returned to the model — only a compact JSON list of dicts with
             ``post_url``, ``author_profile_url``, ``text_snippet``, and ``relative_time``.
-            Performs ``scroll_rounds`` scroll-load cycles after the initial capture (capped).
+            Scrolls down on the **current** page until ``max_posts`` are found, the feed
+            plateaus, or ``scroll_rounds`` is exhausted (budget is at least ``max_posts`` when
+            ``scroll_rounds`` > 0). Do not navigate to the feed again to load more — increase
+            ``scroll_rounds`` or call ``scroll`` then invoke this tool again.
 
             Cap ``max_posts`` is enforced against the agent run limit."""
             target = max_posts if max_posts is not None else agent_max_posts
