@@ -88,6 +88,7 @@ BM="poetry run python scripts/browser_manager.py \
 | `navigate URL` | ✓ | — | only inside `run --steps` |
 | `js` / `js --file PATH` | ✓ | — | only inside `run --steps` |
 | `feed-posts [--max-posts N] [--scroll-rounds N]` | ✓ | — | only inside `run --steps` |
+| `hiring-posts [--max-posts N]` | ✓ | — | ✓ (Step 1) |
 | `run --steps JSON` | ✓ | — | **required** for Steps 1–2 |
 | `url`, `title`, `text`, `html` | ✓ | — | debug |
 | `screenshot`, `scroll`, `wait` | ✓ | — | debug |
@@ -96,7 +97,7 @@ Full command reference: [browser-manager/SKILL.md](browser-manager/SKILL.md).
 
 ### `run --steps` ops
 
-`navigate`, `url`, `title`, `text`, `html`, `js`, `screenshot`, `scroll`, `wait`, `feed-posts`, `check-auth`, `sign-in`
+`navigate`, `url`, `title`, `text`, `html`, `js`, `screenshot`, `scroll`, `wait`, `scroll-until`, `feed-posts`, `hiring-posts`, `check-auth`, `sign-in`
 
 ### JSON stdout
 

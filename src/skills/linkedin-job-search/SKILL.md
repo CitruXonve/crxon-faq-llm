@@ -84,9 +84,17 @@ PY
 )"
 ```
 
-- Adjust `max_posts` / `scroll_rounds` as needed.
+- Adjust `max_posts` / `scroll_rounds` as needed. `feed-posts` **scrolls down on the current page** until it reaches `max_posts`, hits a feed plateau, or exhausts `scroll_rounds` (whichever comes first; budget is at least `max_posts` when `scroll_rounds` > 0).
 - If sort JS returns `{sorted: false}`, add another `{"op":"js","code":"..."}` step in the **same** `run` array (or try `https://www.linkedin.com/feed/?feedType=recent` as the navigate URL) — still within one `run`.
 - Parse stdout: `data.steps[-1].data.posts` (last step should be `feed-posts`).
+
+### If fewer than `max_posts` were collected
+
+**Do not reopen the feed** — a new `$BM navigate` or a second `run --steps` that starts with `navigate` resets scroll position and wastes the session.
+
+- **First:** raise `scroll_rounds` on the existing `feed-posts` step (e.g. match or exceed `max_posts`) and rerun **one** `run --steps` if you have not already — the collector scrolls automatically.
+- **Same session extension:** append scroll + wait + another `feed-posts` to the **same** `run --steps` JSON (before executing), e.g. `{"op":"scroll","pixels":1200}`, `{"op":"wait","timeout_ms":1500}`, then `{"op":"feed-posts","max_posts":N,"scroll_rounds":N}` — each step continues from the current scroll position; **never** insert another `navigate` between them.
+- Re-`navigate` only if the tab was lost (blank page / auth error), not because the post count is low.
 
 **Forbidden pattern (causes empty title / lost session):**
 
@@ -147,4 +155,5 @@ Or use the Cursor Write tool.
 
 - Never paste raw HTML or base64 screenshots into chat.
 - Prefer `feed-posts` inside `run --steps`, not a separate `feed-posts` command after `navigate`.
+- **Never re-navigate to the feed to load more posts** — scroll via `feed-posts` (automatic) or explicit `scroll` steps in the same `run --steps` session.
 - Browser `js` must use DevTools CSS/XPath only.

@@ -280,3 +280,6 @@ The default semantic embedding model for this project is [`all-MiniLM-L6-v2`](ht
 - [ ] multi-media parsing
 - [ ] DB storage of sessions instead of in-memory
 - [ ] Dataflow/Workflow orchestration
+- [ ] LLM Inference
+- [ ] KV Cache
+      Try CSS selector '#workspace section div[data-testid=mainFeed]' under "/feed/" URL instead of "/feed/update/" (that page doesn't exist)
