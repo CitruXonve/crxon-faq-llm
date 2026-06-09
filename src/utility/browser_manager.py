@@ -311,9 +311,16 @@ class BrowserManager:
         return await page.evaluate(wrapped)
 
     async def scroll(self, pixels: int) -> None:
-        """Scroll the page by ``pixels`` (positive = down, negative = up)."""
+        """Scroll the page by ``pixels`` (positive = down, negative = up).
+
+        Prefers the first overflow-scroll/auto container with meaningful height
+        (e.g. LinkedIn's #workspace) over window, which is a no-op on SPA pages
+        where the document itself doesn't scroll.
+        """
         page = self._ensure_started()
-        await page.evaluate(f"window.scrollBy(0, {int(pixels)})")
+        await page.evaluate(
+            f"(document.querySelector('#workspace') || document.documentElement).scrollBy(0, {int(pixels)})"
+        )
 
     async def wait_for(
         self,
@@ -411,6 +418,16 @@ class BrowserManager:
             logger.info("HTML snapshot stream cancelled")
             raise
 
+    async def click(self, selector: str, timeout_ms: int = 5_000) -> None:
+        """Click the first element matching ``selector``."""
+        page = self._ensure_started()
+        await page.locator(selector).first.click(timeout=timeout_ms)
+
+    async def press_key(self, key: str) -> None:
+        """Send a keyboard event to the page (e.g. ``"Escape"``, ``"Enter"``)."""
+        page = self._ensure_started()
+        await page.keyboard.press(key)
+
     def _ensure_started(self) -> Page:
         if self.page is None:
             raise RuntimeError("Browser not initialized")
@@ -430,3 +447,9 @@ class BrowserManager:
                 "using this profile; Playwright launch will fail if so.",
                 lock_path,
             )
+
+
+if __name__ == "__main__":
+    from src.utility.browser_manager_cli import main
+
+    raise SystemExit(main())
