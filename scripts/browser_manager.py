@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Playwright BrowserManager CLI for agent skills and automation.
+Generic Playwright BrowserManager CLI (no LinkedIn-specific commands).
+
+For LinkedIn feed/auth commands use ``scripts/linkedin_browser.py``.
 
 One-time setup::
 
@@ -8,11 +10,9 @@ One-time setup::
 
 Examples::
 
-    poetry run python scripts/browser_manager.py --no-headless \
-        --user-data-dir .browser_profile --profile-directory Default \
-        navigate https://www.linkedin.com
-
-One-shot LangChain pipeline: ``poetry run python -m src.utility.browser``.
+    poetry run python scripts/browser_manager.py navigate https://example.com
+    poetry run python scripts/browser_manager.py run --steps \\
+        '[{"op":"navigate","url":"https://example.com"},{"op":"title"}]'
 """
 
 from __future__ import annotations
