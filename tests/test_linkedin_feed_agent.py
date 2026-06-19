@@ -1,4 +1,4 @@
-"""Tests for LinkedInFeedAgent."""
+"""Tests for LinkedInFeedPipeline."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.utility.crawl4ai_linkedin_helper import CrawlFeedResult
-from src.utility.linkedin_feed_agent import (
-    LinkedInFeedAgent,
+from src.utility.linkedin_feed_config import FeedCollectionResult
+from src.utility.linkedin_feed_pipeline import (
+    LinkedInFeedPipeline,
     default_export_path,
     write_feed_export,
 )
@@ -23,6 +24,15 @@ def _sample_post(aid: str = "1") -> dict[str, str]:
         "text_snippet": "hello",
         "relative_time": "1h",
     }
+
+
+def _mock_browser_session(browser: MagicMock | None = None) -> MagicMock:
+    mock_session = MagicMock()
+    mock_session.browser = browser or MagicMock()
+    mock_session.ensure_authenticated = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    return mock_session
 
 
 class TestWriteFeedExport(unittest.TestCase):
@@ -49,24 +59,29 @@ class TestDefaultExportPath(unittest.TestCase):
             self.assertEqual(path.parent, Path(tmp))
 
 
-class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
+class TestLinkedInFeedPipelineRun(unittest.IsolatedAsyncioTestCase):
     async def test_live_collect_success_with_export(self) -> None:
         live_posts = [_sample_post("1"), _sample_post("2")]
         sort_meta = {"sort_applied": True, "sort_method": "menu"}
+        live_result = FeedCollectionResult(
+            posts=live_posts,
+            sort_meta=sort_meta,
+            collection_strategy="js",
+        )
 
         with patch.object(
-            LinkedInFeedAgent,
-            "_collect_feed_live",
-            new=AsyncMock(return_value=(live_posts, sort_meta)),
+            LinkedInFeedPipeline,
+            "_collect_live",
+            new=AsyncMock(return_value=live_result),
         ) as live_mock:
             with tempfile.TemporaryDirectory() as tmp:
-                agent = LinkedInFeedAgent(
+                pipeline = LinkedInFeedPipeline(
                     user_data_dir=tmp,
                     check_auth=False,
                     export_dir=tmp,
                     post_card_selector="div[data-lazy-mount-id]",
                 )
-                result = await agent.run(write_export=True)
+                result = await pipeline.run(write_export=True)
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["collection_mode"], "live")
@@ -86,17 +101,17 @@ class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
             error_message="crawl_failed",
         )
         with patch(
-            "src.utility.linkedin_feed_agent.crawl_linkedin_feed",
+            "src.utility.linkedin_feed_pipeline.crawl_linkedin_feed",
             new=AsyncMock(return_value=crawl_result),
         ):
             with tempfile.TemporaryDirectory() as tmp:
-                agent = LinkedInFeedAgent(
+                pipeline = LinkedInFeedPipeline(
                     user_data_dir=tmp,
                     check_auth=False,
                     use_crawl4ai=True,
                     resolve_missing_urls=False,
                 )
-                result = await agent.run(write_export=False)
+                result = await pipeline.run(write_export=False)
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["collection_mode"], "crawl4ai")
@@ -104,108 +119,75 @@ class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
 
     async def test_run_zero_valid_with_auth_check(self) -> None:
         live_posts = [{"post_url": "", "author_profile_url": ""}]
-        mock_bm = MagicMock()
-        mock_bm.navigate = AsyncMock()
-        mock_bm.__aenter__ = AsyncMock(return_value=mock_bm)
-        mock_bm.__aexit__ = AsyncMock(return_value=None)
+        live_result = FeedCollectionResult(
+            posts=live_posts,
+            sort_meta={"sort_applied": True, "sort_method": "menu"},
+            collection_strategy="js",
+        )
 
         with patch(
-            "src.utility.linkedin_feed_agent.BrowserManager",
-            return_value=mock_bm,
+            "src.utility.linkedin_feed_pipeline.LinkedInBrowserSession",
+            return_value=_mock_browser_session(),
         ):
-            with patch(
-                "src.utility.linkedin_feed_agent.linkedin_profile_lock"
-            ) as lock_ctx:
-                lock_ctx.return_value.__aenter__ = AsyncMock(return_value=None)
-                lock_ctx.return_value.__aexit__ = AsyncMock(return_value=None)
-                with patch(
-                    "src.utility.linkedin_feed_agent.is_linkedin_authenticated",
-                    new=AsyncMock(return_value=True),
-                ):
-                    with patch.object(
-                        LinkedInFeedAgent,
-                        "_collect_feed_live",
-                        new=AsyncMock(
-                            return_value=(
-                                live_posts,
-                                {"sort_applied": True, "sort_method": "menu"},
-                            )
-                        ),
-                    ):
-                        with tempfile.TemporaryDirectory() as tmp:
-                            agent = LinkedInFeedAgent(
-                                user_data_dir=tmp,
-                                check_auth=True,
-                            )
-                            result = await agent.run(write_export=False)
+            with patch.object(
+                LinkedInFeedPipeline,
+                "_collect_live",
+                new=AsyncMock(return_value=live_result),
+            ):
+                with tempfile.TemporaryDirectory() as tmp:
+                    pipeline = LinkedInFeedPipeline(
+                        user_data_dir=tmp,
+                        check_auth=True,
+                    )
+                    result = await pipeline.run(write_export=False)
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["quality"]["valid_post_url_count"], 0)
 
     async def test_auth_failure_raises(self) -> None:
-        mock_bm = MagicMock()
-        mock_bm.navigate = AsyncMock()
-        mock_bm.__aenter__ = AsyncMock(return_value=mock_bm)
-        mock_bm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = _mock_browser_session()
+        mock_session.ensure_authenticated = AsyncMock(
+            side_effect=RuntimeError(
+                "LinkedIn session not authenticated. Run sign-in first."
+            )
+        )
 
         with patch(
-            "src.utility.linkedin_feed_agent.BrowserManager",
-            return_value=mock_bm,
+            "src.utility.linkedin_feed_pipeline.LinkedInBrowserSession",
+            return_value=mock_session,
         ):
-            with patch(
-                "src.utility.linkedin_feed_agent.linkedin_profile_lock"
-            ) as lock_ctx:
-                lock_ctx.return_value.__aenter__ = AsyncMock(return_value=None)
-                lock_ctx.return_value.__aexit__ = AsyncMock(return_value=None)
-                with patch(
-                    "src.utility.linkedin_feed_agent.is_linkedin_authenticated",
-                    new=AsyncMock(return_value=False),
-                ):
-                    with tempfile.TemporaryDirectory() as tmp:
-                        agent = LinkedInFeedAgent(
-                            user_data_dir=tmp,
-                            check_auth=True,
-                        )
-                        with self.assertRaises(RuntimeError) as ctx:
-                            await agent.run(write_export=False)
+            with tempfile.TemporaryDirectory() as tmp:
+                pipeline = LinkedInFeedPipeline(
+                    user_data_dir=tmp,
+                    check_auth=True,
+                )
+                with self.assertRaises(RuntimeError) as ctx:
+                    await pipeline.run(write_export=False)
 
         self.assertIn("not authenticated", str(ctx.exception).lower())
 
     async def test_auth_success_proceeds_to_live_collect(self) -> None:
-        mock_bm = MagicMock()
-        mock_bm.navigate = AsyncMock()
-        mock_bm.__aenter__ = AsyncMock(return_value=mock_bm)
-        mock_bm.__aexit__ = AsyncMock(return_value=None)
+        live_result = FeedCollectionResult(
+            posts=[_sample_post()],
+            sort_meta={"sort_applied": True, "sort_method": "menu"},
+            collection_strategy="js",
+        )
 
         with patch(
-            "src.utility.linkedin_feed_agent.BrowserManager",
-            return_value=mock_bm,
+            "src.utility.linkedin_feed_pipeline.LinkedInBrowserSession",
+            return_value=_mock_browser_session(),
         ):
-            with patch(
-                "src.utility.linkedin_feed_agent.linkedin_profile_lock"
-            ) as lock_ctx:
-                lock_ctx.return_value.__aenter__ = AsyncMock(return_value=None)
-                lock_ctx.return_value.__aexit__ = AsyncMock(return_value=None)
-                with patch(
-                    "src.utility.linkedin_feed_agent.is_linkedin_authenticated",
-                    new=AsyncMock(return_value=True),
-                ):
-                    with patch.object(
-                        LinkedInFeedAgent,
-                        "_collect_feed_live",
-                        new=AsyncMock(
-                            return_value=(
-                                [_sample_post()],
-                                {"sort_applied": True, "sort_method": "menu"},
-                            )
-                        ),
-                    ) as live_mock:
-                        with tempfile.TemporaryDirectory() as tmp:
-                            agent = LinkedInFeedAgent(
-                                user_data_dir=tmp,
-                                check_auth=True,
-                            )
-                            result = await agent.run(write_export=False)
+            with patch.object(
+                LinkedInFeedPipeline,
+                "_collect_live",
+                new=AsyncMock(return_value=live_result),
+            ) as live_mock:
+                with tempfile.TemporaryDirectory() as tmp:
+                    pipeline = LinkedInFeedPipeline(
+                        user_data_dir=tmp,
+                        check_auth=True,
+                    )
+                    result = await pipeline.run(write_export=False)
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["collection_mode"], "live")
@@ -236,46 +218,34 @@ class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
             return posts
 
         mock_bm = MagicMock()
-        mock_bm.navigate = AsyncMock()
-        mock_bm.wait_for = AsyncMock()
-        mock_bm.execute_javascript = AsyncMock(return_value={"sorted": True})
-        mock_bm.__aenter__ = AsyncMock(return_value=mock_bm)
-        mock_bm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = _mock_browser_session(mock_bm)
 
         with patch(
-            "src.utility.linkedin_feed_agent.crawl_linkedin_feed",
+            "src.utility.linkedin_feed_pipeline.crawl_linkedin_feed",
             new=AsyncMock(return_value=crawl_result),
         ):
             with patch(
-                "src.utility.linkedin_feed_agent.BrowserManager",
-                return_value=mock_bm,
+                "src.utility.linkedin_feed_pipeline.LinkedInBrowserSession",
+                return_value=mock_session,
             ):
                 with patch(
-                    "src.utility.linkedin_feed_agent.linkedin_profile_lock"
-                ) as lock_ctx:
-                    lock_ctx.return_value.__aenter__ = AsyncMock(
-                        return_value=None)
-                    lock_ctx.return_value.__aexit__ = AsyncMock(
-                        return_value=None)
+                    "src.utility.linkedin_feed_pipeline.prepare_live_feed_page",
+                    new=AsyncMock(
+                        return_value={"sort_applied": True, "sort_method": "menu"}
+                    ),
+                ):
                     with patch(
-                        "src.utility.linkedin_feed_agent.prepare_live_feed_page",
-                        new=AsyncMock(
-                            return_value={"sort_applied": True,
-                                          "sort_method": "menu"}
-                        ),
-                    ):
-                        with patch(
-                            "src.utility.linkedin_feed_agent.resolve_post_urls_via_send_button",
-                            new=AsyncMock(side_effect=_fill_posts),
-                        ) as resolve_mock:
-                            with tempfile.TemporaryDirectory() as tmp:
-                                agent = LinkedInFeedAgent(
-                                    user_data_dir=tmp,
-                                    check_auth=False,
-                                    use_crawl4ai=True,
-                                    resolve_missing_urls=True,
-                                )
-                                result = await agent.run(write_export=False)
+                        "src.utility.linkedin_feed_pipeline.resolve_post_urls_via_send_button",
+                        new=AsyncMock(side_effect=_fill_posts),
+                    ) as resolve_mock:
+                        with tempfile.TemporaryDirectory() as tmp:
+                            pipeline = LinkedInFeedPipeline(
+                                user_data_dir=tmp,
+                                check_auth=False,
+                                use_crawl4ai=True,
+                                resolve_missing_urls=True,
+                            )
+                            result = await pipeline.run(write_export=False)
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["collection_mode"], "crawl4ai")
@@ -297,21 +267,21 @@ class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
             crawl4ai_success=True,
         )
         with patch(
-            "src.utility.linkedin_feed_agent.crawl_linkedin_feed",
+            "src.utility.linkedin_feed_pipeline.crawl_linkedin_feed",
             new=AsyncMock(return_value=crawl_result),
         ):
             with patch(
-                "src.utility.linkedin_feed_agent.resolve_post_urls_via_send_button",
+                "src.utility.linkedin_feed_pipeline.resolve_post_urls_via_send_button",
                 new=AsyncMock(),
             ) as resolve_mock:
                 with tempfile.TemporaryDirectory() as tmp:
-                    agent = LinkedInFeedAgent(
+                    pipeline = LinkedInFeedPipeline(
                         user_data_dir=tmp,
                         check_auth=False,
                         use_crawl4ai=True,
                         resolve_missing_urls=False,
                     )
-                    result = await agent.run(write_export=False)
+                    result = await pipeline.run(write_export=False)
 
         resolve_mock.assert_not_awaited()
         self.assertEqual(result["urls_resolved_count"], 0)
@@ -326,29 +296,29 @@ class TestLinkedInFeedAgentRun(unittest.IsolatedAsyncioTestCase):
             crawl4ai_success=True,
         )
         fallback_post = _sample_post("42")
+        live_result = FeedCollectionResult(
+            posts=[fallback_post],
+            sort_meta={"sort_applied": True, "sort_method": "feedType=recent"},
+            collection_strategy="js",
+        )
 
         with patch(
-            "src.utility.linkedin_feed_agent.crawl_linkedin_feed",
+            "src.utility.linkedin_feed_pipeline.crawl_linkedin_feed",
             new=AsyncMock(return_value=crawl_result),
         ):
             with patch.object(
-                LinkedInFeedAgent,
-                "_collect_feed_live",
-                new=AsyncMock(
-                    return_value=(
-                        [fallback_post],
-                        {"sort_applied": True, "sort_method": "feedType=recent"},
-                    )
-                ),
+                LinkedInFeedPipeline,
+                "_collect_live",
+                new=AsyncMock(return_value=live_result),
             ) as live_mock:
                 with tempfile.TemporaryDirectory() as tmp:
-                    agent = LinkedInFeedAgent(
+                    pipeline = LinkedInFeedPipeline(
                         user_data_dir=tmp,
                         check_auth=False,
                         use_crawl4ai=True,
                         resolve_missing_urls=True,
                     )
-                    result = await agent.run(write_export=False)
+                    result = await pipeline.run(write_export=False)
 
         live_mock.assert_awaited_once()
         self.assertTrue(result["browser_fallback_used"])

@@ -19,9 +19,12 @@ class TestCollectRawFeedPostsFromPage(unittest.IsolatedAsyncioTestCase):
         browser = MagicMock()
         page = MagicMock()
         page.evaluate = AsyncMock(return_value=None)
+        page.url = "https://www.linkedin.com/feed/"
         browser._ensure_started = MagicMock(return_value=page)
         browser.get_page_html = AsyncMock(return_value=html)
         browser.scroll = AsyncMock()
+        browser.wait_for_page_ready = AsyncMock()
+        browser.safe_evaluate = AsyncMock(return_value=None)
         browser.execute_javascript = AsyncMock(return_value={"error": "no feed"})
         return browser
 
@@ -87,6 +90,8 @@ class TestCollectRawFeedPostsFromPage(unittest.IsolatedAsyncioTestCase):
         browser._ensure_started = MagicMock(return_value=page)
         browser.get_page_html = AsyncMock(return_value="<html></html>")
         browser.scroll = AsyncMock()
+        browser.wait_for_page_ready = AsyncMock()
+        browser.safe_evaluate = AsyncMock(return_value=None)
         browser.execute_javascript = AsyncMock(return_value={"error": "no feed"})
 
         def _row(n: int) -> dict[str, str]:
@@ -98,7 +103,7 @@ class TestCollectRawFeedPostsFromPage(unittest.IsolatedAsyncioTestCase):
             }
 
         with patch(
-            "src.utility.linkedin_feed_collect.parse_feed_posts",
+            "src.utility.linkedin_feed_collector.parse_feed_posts",
             side_effect=[[_row(1)], [_row(2)], [_row(3)]],
         ):
             rows = await collect_raw_feed_posts_from_page(
@@ -114,7 +119,10 @@ class TestCollectRawFeedPostsFromPage(unittest.IsolatedAsyncioTestCase):
         browser = MagicMock()
         page = MagicMock()
         page.evaluate = AsyncMock(return_value=None)
+        page.url = "https://www.linkedin.com/feed/"
         browser._ensure_started = MagicMock(return_value=page)
+        browser.wait_for_page_ready = AsyncMock()
+        browser.safe_evaluate = AsyncMock(return_value=None)
         browser.execute_javascript = AsyncMock(
             return_value=[
                 {

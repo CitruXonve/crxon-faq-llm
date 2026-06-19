@@ -310,6 +310,59 @@ class BrowserManager:
         logger.debug("Executing JavaScript: %s", snippet)
         return await page.evaluate(wrapped)
 
+    _CONTEXT_DESTROYED = "Execution context was destroyed"
+
+    async def wait_for_page_ready(
+        self,
+        *,
+        selector: str | None = "div[data-testid=mainFeed], div[data-lazy-mount-id]",
+        timeout_ms: int = 30_000,
+    ) -> None:
+        """Wait until DOM is loaded and the feed container is present."""
+        page = self._ensure_started()
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+        except Exception as exc:
+            logger.debug("domcontentloaded wait: %s", exc)
+        if selector:
+            try:
+                await self.wait_for(selector=selector, timeout_ms=timeout_ms)
+            except Exception as exc:
+                logger.warning("wait_for_page_ready selector wait failed: %s", exc)
+
+    async def safe_evaluate(
+        self,
+        expression: str,
+        arg: Any = None,
+        *,
+        max_attempts: int = 3,
+    ) -> Any:
+        """``page.evaluate`` with retry when LinkedIn navigation destroys the context."""
+        last_exc: Exception | None = None
+        for attempt in range(max_attempts):
+            page = self._ensure_started()
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=15_000)
+            except Exception:
+                pass
+            try:
+                if arg is None:
+                    return await page.evaluate(expression)
+                return await page.evaluate(expression, arg)
+            except Exception as exc:
+                last_exc = exc
+                msg = str(exc)
+                if self._CONTEXT_DESTROYED not in msg or attempt + 1 >= max_attempts:
+                    raise
+                logger.warning(
+                    "page.evaluate lost context (attempt %d/%d), retrying",
+                    attempt + 1,
+                    max_attempts,
+                )
+                await self.wait_for_page_ready()
+        assert last_exc is not None
+        raise last_exc
+
     async def scroll(self, pixels: int) -> None:
         """Scroll the page by ``pixels`` (positive = down, negative = up).
 

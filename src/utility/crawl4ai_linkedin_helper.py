@@ -12,7 +12,7 @@ from typing import AsyncIterator
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig, VirtualScrollConfig
 
-from src.utility.linkedin_feed_collect import _scroll_budget
+from src.utility.linkedin_feed_config import FeedCollectionOptions, scroll_budget
 from src.utility.linkedin_feed_parser import (
     DEFAULT_POST_CARD_SELECTOR,
     activity_id_from_url,
@@ -113,8 +113,7 @@ def build_virtual_scroll_config(
     post_card_selector: str | None = DEFAULT_POST_CARD_SELECTOR,
 ) -> VirtualScrollConfig:
     """Map CLI scroll budget to Crawl4AI virtual scroll settings."""
-    scroll_count = _scroll_budget(
-        scroll_rounds=scroll_rounds, target=max_posts)
+    scroll_count = scroll_budget(scroll_rounds=scroll_rounds, target=max_posts)
     if scroll_count <= 0:
         scroll_count = 1
     wait_after_scroll = (
@@ -194,40 +193,33 @@ async def linkedin_profile_lock(user_data_dir: str | Path) -> AsyncIterator[None
         fh.close()
 
 
-async def crawl_linkedin_feed(
-    *,
-    user_data_dir: str | Path,
-    profile_directory: str | None = "Default",
-    max_posts: int = 5,
-    scroll_rounds: int = 3,
-    headless: bool = True,
-    sort_js_path: str | Path | None = None,
-    container_selector: str = "#workspace",
-    post_card_selector: str | None = DEFAULT_POST_CARD_SELECTOR,
-    viewport: tuple[int, int] = (1280, 720),
-) -> CrawlFeedResult:
+async def crawl_linkedin_feed(options: FeedCollectionOptions) -> CrawlFeedResult:
     """Crawl the LinkedIn feed with Crawl4AI virtual scroll and parse posts."""
+    profile = options.profile
+    scroll = options.scroll
+    selectors = options.selectors
+    post_card_selector = selectors.post_card_selector
+
     start = time.perf_counter()
-    scroll_count = _scroll_budget(
-        scroll_rounds=scroll_rounds, target=max_posts)
+    scroll_count = scroll_budget(
+        scroll_rounds=scroll.scroll_rounds, target=scroll.max_posts
+    )
     if scroll_count <= 0:
         scroll_count = 1
 
     browser_config = build_browser_config(
-        user_data_dir=user_data_dir,
-        profile_directory=profile_directory,
-        headless=headless,
-        viewport=viewport,
+        user_data_dir=profile.user_data_dir,
+        profile_directory=profile.profile_directory,
+        headless=profile.headless,
+        viewport=profile.viewport,
     )
     virtual_config = build_virtual_scroll_config(
-        scroll_rounds=scroll_rounds,
-        max_posts=max_posts,
-        container_selector=container_selector,
+        scroll_rounds=scroll.scroll_rounds,
+        max_posts=scroll.max_posts,
+        container_selector=selectors.container_selector,
         post_card_selector=post_card_selector,
     )
-    html_delay = (
-        _LAZY_MOUNT_HTML_DELAY_S if post_card_selector else 1.0
-    )
+    html_delay = _LAZY_MOUNT_HTML_DELAY_S if post_card_selector else 1.0
     run_config = CrawlerRunConfig(
         virtual_scroll_config=virtual_config,
         cache_mode=CacheMode.BYPASS,
@@ -243,7 +235,7 @@ async def crawl_linkedin_feed(
     error_message: str | None = None
     success = False
 
-    async with linkedin_profile_lock(user_data_dir):
+    async with linkedin_profile_lock(profile.user_data_dir):
         try:
             async with AsyncWebCrawler(config=browser_config) as crawler:
                 result = await crawler.arun(url=LINKEDIN_FEED_URL, config=run_config)
@@ -258,7 +250,7 @@ async def crawl_linkedin_feed(
                     html,
                     post_card_selector=post_card_selector,
                 )
-                posts = dedupe_feed_posts(parsed, max_posts=max_posts)
+                posts = dedupe_feed_posts(parsed, max_posts=scroll.max_posts)
                 success = True
         except Exception as exc:
             error_message = str(exc)

@@ -1,4 +1,4 @@
-"""CLI entrypoint that runs ``LinkedInFeedAgent`` exactly once.
+"""CLI entrypoint that runs ``LinkedInFeedPipeline`` exactly once.
 
 Usage::
 
@@ -7,7 +7,7 @@ Usage::
       --user-data-dir .browser_profile --profile-directory Default \\
       --headless --max-posts 25 --scroll-rounds 50
 
-Each invocation constructs a :class:`LinkedInFeedAgent`, renders a live spinner
+Each invocation constructs a :class:`LinkedInFeedPipeline`, renders a live spinner
 whose suffix updates as collection progresses, prints one JSON summary to stdout,
 and on success prints elapsed time to stderr (human-readable).
 """
@@ -19,8 +19,8 @@ import asyncio
 import json
 import sys
 
-from src.utility.linkedin_feed_agent import LinkedInFeedAgent
 from src.utility.linkedin_feed_parser import DEFAULT_POST_CARD_SELECTOR
+from src.utility.linkedin_feed_pipeline import LinkedInFeedPipeline, LinkedInFeedPipelineConfig
 from src.utility.linkedin_web_agent import _spin_until
 from src.utility.spinner import Spinner
 
@@ -37,7 +37,7 @@ def _parse_viewport(raw: str) -> tuple[int, int]:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Collect LinkedIn feed posts via LinkedInFeedAgent (live browser by default).",
+        description="Collect LinkedIn feed posts via LinkedInFeedPipeline (live browser by default).",
     )
     headless = parser.add_mutually_exclusive_group()
     headless.add_argument("--headless", action="store_true", default=None)
@@ -119,7 +119,7 @@ async def _async_main(ns: argparse.Namespace) -> int:
     else:
         resolve_missing_urls = True
 
-    agent = LinkedInFeedAgent(
+    config = LinkedInFeedPipelineConfig.from_kwargs(
         user_data_dir=ns.user_data_dir,
         profile_directory=ns.profile_directory,
         headless=headless,
@@ -136,6 +136,7 @@ async def _async_main(ns: argparse.Namespace) -> int:
         resolve_missing_urls=resolve_missing_urls,
         use_crawl4ai=ns.use_crawl4ai,
     )
+    pipeline = LinkedInFeedPipeline(config)
 
     spinner = Spinner()
     current_stage = ["starting"]
@@ -143,7 +144,7 @@ async def _async_main(ns: argparse.Namespace) -> int:
     spin_task = asyncio.create_task(_spin_until(stop, current_stage, spinner))
 
     try:
-        result = await agent.run(
+        result = await pipeline.run(
             on_progress=lambda msg: current_stage.__setitem__(0, msg),
             write_export=not ns.no_export,
         )

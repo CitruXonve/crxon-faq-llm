@@ -50,7 +50,7 @@ Runs `LinkedInWebAgent` (LangChain + built-in auth) — not the skill-driven CLI
 poetry run python -m src.utility.linkedin_feed
 ```
 
-Runs `LinkedInFeedAgent` (Crawl4AI virtual scroll, no LLM) — raw feed JSON for production/background collection.
+Runs `LinkedInFeedPipeline` (live browser by default, Crawl4AI opt-in; no LLM) — raw feed JSON for production/background collection.
 
 ---
 

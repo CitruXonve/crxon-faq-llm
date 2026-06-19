@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Collect LinkedIn feed posts via Crawl4AI (LinkedInFeedAgent).
+Collect LinkedIn feed posts via LinkedInFeedPipeline.
 
 Prerequisites::
 
